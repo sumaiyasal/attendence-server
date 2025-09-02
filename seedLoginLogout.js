@@ -67,8 +67,8 @@ async function seed() {
 
     employees.forEach(emp => {
       allDates.forEach(date => {
-        const loginTime = randomLoginTime(date); // 10-11 AM BD
-        const logoutTime = randomLogoutTime(loginTime); // 8-11 hours after login
+        const loginTime = randomLoginTime(date); 
+        const logoutTime = randomLogoutTime(loginTime); 
 
         records.push({
           employee: emp,

@@ -31,6 +31,33 @@ async function connectDB() {
   }
 }
 connectDB();
+function buildMatchStage(query) {
+  const { year, months } = query;
+  let conditions = [];
+  const monthNameToNumber = {
+    Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
+    Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12
+  };
+
+  if (year) {
+    conditions.push({ $eq: [{ $year: "$date" }, parseInt(year)] });
+  }
+
+  if (months) {
+    const monthArray = months
+      .split(",")
+      .map(m => monthNameToNumber[m.trim()])
+      .filter(Boolean); // remove undefined if month name is wrong
+    if (monthArray.length) {
+      conditions.push({ $in: [{ $month: "$date" }, monthArray] });
+    }
+  }
+
+  if (!conditions.length) return null;
+
+  return { $expr: conditions.length > 1 ? { $and: conditions } : conditions[0] };
+}
+
 
 // Routes
 app.get('/', (req, res) => {
@@ -63,10 +90,13 @@ app.get('/total-employees', async (req, res) => {
 });
 app.get('/dashboard-stats', async (req, res) => {
   try {
-    const collection = client.db('attendance').collection('userSessions');
-
-    // Aggregate stats
-    const stats = await collection.aggregate([
+    const collection = attendanceCollection;
+    const pipeline = [];
+    const matchStage = buildMatchStage(req.query);
+    
+    if (matchStage) pipeline.push({ $match: matchStage });
+      
+    pipeline.push(
       {
         $project: {
           employee: 1,
@@ -105,13 +135,14 @@ app.get('/dashboard-stats', async (req, res) => {
               { $toString: { $round: ["$avgLogoutMinute", 0] } }
             ]
           },
-         avgWorkHours: { 
-      $round: [{ $divide: ["$avgWorkMs", 1000 * 60 * 60] }, 1] 
-    }
+          avgWorkHours: {
+            $round: [{ $divide: ["$avgWorkMs", 1000 * 60 * 60] }, 1]
+          }
         }
       }
-    ]).toArray();
+    );
 
+    const stats = await collection.aggregate(pipeline).toArray();
     res.json(stats[0] || {});
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -120,8 +151,12 @@ app.get('/dashboard-stats', async (req, res) => {
 app.get('/employee-monthly-hours', async (req, res) => {
   try {
     const collection = client.db('attendance').collection('userSessions');
+    const pipeline = [];
 
-    const monthlyHours = await collection.aggregate([
+    const matchStage = buildMatchStage(req.query);
+    if (matchStage) pipeline.push({ $match: matchStage });
+
+    pipeline.push(
       {
         $project: {
           employee: 1,
@@ -146,19 +181,23 @@ app.get('/employee-monthly-hours', async (req, res) => {
         }
       },
       { $sort: { employee: 1, year: 1, month: 1 } }
-    ]).toArray();
+    );
 
+    const monthlyHours = await collection.aggregate(pipeline).toArray();
     res.json(monthlyHours);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.get("/monthly-overtime", async (req, res) => {
   try {
     const collection = client.db("attendance").collection("userSessions");
+    const pipeline = [];
 
-    const overtimeData = await collection.aggregate([
+    const matchStage = buildMatchStage(req.query);
+    if (matchStage) pipeline.push({ $match: matchStage });
+    
+    pipeline.push(
       {
         $project: {
           employee: 1,
@@ -189,20 +228,22 @@ app.get("/monthly-overtime", async (req, res) => {
         }
       },
       { $sort: { month: 1 } }
-    ]).toArray();
-
+    );
+         const overtimeData = await collection.aggregate(pipeline).toArray();
     res.json(overtimeData);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
+  }  
 });
 
 app.get("/avg-break-per-month", async (req, res) => {
   try {
     const collection = client.db("attendance").collection("userSessions");
-
-    const avgBreak = await collection.aggregate([
-      {
+    const pipeline = [];
+    const matchStage = buildMatchStage(req.query);
+    if (matchStage) pipeline.push({ $match: matchStage });
+   pipeline.push(
+    {
         $project: {
           month: { $month: "$date" },
           workHours: { $divide: [{ $subtract: ["$logoutTime", "$loginTime"] }, 1000 * 60 * 60] }
@@ -230,19 +271,22 @@ app.get("/avg-break-per-month", async (req, res) => {
         }
       },
       { $sort: { month: 1 } }
-    ]).toArray();
-
+   );
+    const avgBreak = await collection.aggregate(pipeline).toArray();
     res.json(avgBreak);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
+  }  
+  
 });
 app.get("/total-break-per-month", async (req, res) => {
   try {
     const collection = client.db("attendance").collection("userSessions");
-
-    const breakData = await collection.aggregate([
-      {
+  const pipeline = [];
+    const matchStage = buildMatchStage(req.query);
+    if (matchStage) pipeline.push({ $match: matchStage }); 
+    pipeline.push(
+       {
         $project: {
           month: { $month: "$date" },
           workHours: { $divide: [{ $subtract: ["$logoutTime", "$loginTime"] }, 1000 * 60 * 60] }
@@ -270,19 +314,21 @@ app.get("/total-break-per-month", async (req, res) => {
         }
       },
       { $sort: { month: 1 } }
-    ]).toArray();
-
+    );
+  const breakData = await collection.aggregate(pipeline).toArray();
     res.json(breakData);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
+  }  
 });
 app.get("/top-working-hours", async (req, res) => {
   try {
     const collection = client.db("attendance").collection("userSessions");
-
-    const topEmployees = await collection.aggregate([
-      {
+    const pipeline = [];
+    const matchStage = buildMatchStage(req.query);
+    if (matchStage) pipeline.push({ $match: matchStage }); 
+    pipeline.push(
+       {
         $project: {
           employee: 1,
           workHours: { $divide: [{ $subtract: ["$logoutTime", "$loginTime"] }, 1000 * 60 * 60] }
@@ -303,20 +349,22 @@ app.get("/top-working-hours", async (req, res) => {
           totalHours: { $round: ["$totalHours", 2] }
         }
       }
-    ]).toArray();
-
+    );
+   const topEmployees = await collection.aggregate(pipeline).toArray();
     res.json(topEmployees);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
+  }  
 });
 
 app.get("/bottom-working-hours", async (req, res) => {
   try {
     const collection = client.db("attendance").collection("userSessions");
-
-    const bottomEmployees = await collection.aggregate([
-      {
+    const pipeline = [];
+    const matchStage = buildMatchStage(req.query);
+    if (matchStage) pipeline.push({ $match: matchStage });
+    pipeline.push(
+ {
         $project: {
           employee: 1,
           workHours: { $divide: [{ $subtract: ["$logoutTime", "$loginTime"] }, 1000 * 60 * 60] }
@@ -337,19 +385,21 @@ app.get("/bottom-working-hours", async (req, res) => {
           totalHours: { $round: ["$totalHours", 2] }
         }
       }
-    ]).toArray();
-
+    );
+    const bottomEmployees = await collection.aggregate(pipeline).toArray();
     res.json(bottomEmployees);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
+  }  
 });
 app.get("/employee-summary", async (req, res) => {
   try {
     const collection = client.db("attendance").collection("userSessions");
-
-    const summary = await collection.aggregate([
-      {
+     const pipeline = [];
+    const matchStage = buildMatchStage(req.query);
+    if (matchStage) pipeline.push({ $match: matchStage });
+    pipeline.push(
+        {
         $project: {
           employee: 1,
           workHours: {
@@ -378,13 +428,14 @@ app.get("/employee-summary", async (req, res) => {
           daysWorked: 1
         }
       },
-      { $sort: { totalHours: -1 } } // Sort by most worked
-    ]).toArray();
-
+      { $sort: { totalHours: -1 } }
+    );
+   const summary = await collection.aggregate(pipeline).toArray();
     res.json(summary);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
+  }  
+  
 });
 
 // Start server

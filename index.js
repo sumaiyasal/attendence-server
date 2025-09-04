@@ -629,7 +629,9 @@ app.get("/monthly-overtime", async (req, res) => {
         $project: {
           _id: 0,
           month: "$_id.month",
-          totalOvertime: { $divide: ["$totalOvertimeMs", 1000 * 60 * 60] } // convert ms → hours
+         totalOvertime: { 
+        $round: [{ $divide: ["$totalOvertimeMs", 1000 * 60 * 60] }] 
+         } // convert ms → hours
         }
       },
       { $sort: { month: 1 } }

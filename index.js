@@ -318,28 +318,32 @@ app.get("/monthly-overtime", async (req, res) => {
 
     const monthOvertime = {};
 
-    rows.forEach((row) => {
+    rows.forEach(row => {
       if (!row.loginTime || !row.logoutTime || !row.date) return;
 
-      const d = new Date(row.date);
-      const rowYear = d.getFullYear();
-      const rowMonth = d.getMonth() + 1;
+      const date = new Date(row.date);
+      const rowYear = date.getFullYear();
+      const rowMonth = date.getMonth() + 1;
 
       // Apply filters
       if (year && rowYear !== parseInt(year)) return;
       if (monthArray && !monthArray.includes(rowMonth)) return;
 
-      const workHours = (parseTimeToMs(row.logoutTime) - parseTimeToMs(row.loginTime)) / 1000 / 60 / 60;
-      if (!monthOvertime[rowMonth]) monthOvertime[rowMonth] = 0;
+      // Calculate worked hours
+      const workedHours = (parseTimeToMs(row.logoutTime) - parseTimeToMs(row.loginTime)) / (1000 * 60 * 60);
 
-      if (workHours > 8) monthOvertime[rowMonth] += workHours - 8;
+      // Overtime = hours beyond 8
+      const overtime = workedHours > 8 ? workedHours - 8 : 0;
+
+      if (!monthOvertime[rowMonth]) monthOvertime[rowMonth] = 0;
+      monthOvertime[rowMonth] += overtime;
     });
 
-    const result = Object.keys(monthOvertime)
-      .sort((a, b) => a - b)
-      .map((month) => ({
+    const result = Object.entries(monthOvertime)
+      .sort(([a], [b]) => a - b)
+      .map(([month, totalOvertime]) => ({
         month: +month,
-        totalOvertime: +monthOvertime[month].toFixed(2)
+        totalOvertime: +totalOvertime.toFixed(2)
       }));
 
     res.json(result);
@@ -608,6 +612,25 @@ app.get("/employee-summary", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get("/attendance-years", async (req, res) => {
+  try {
+    const rows = await attendanceCollection.find({}, { projection: { date: 1 } }).toArray();
+    const yearSet = new Set();
+
+    rows.forEach(row => {
+      if (row.date) {
+        const year = new Date(row.date).getFullYear();
+        yearSet.add(year);
+      }
+    });
+
+    const years = Array.from(yearSet).sort((a, b) => a - b); // sorted ascending
+    res.json(years);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 
@@ -616,3 +639,4 @@ app.get("/employee-summary", async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
